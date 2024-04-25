@@ -1,0 +1,10 @@
+[package]
+name = "ntru_crypt"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base64 = "0.22.0"
+clap = "4.5.4"
+rand = "0.8.5"
+rayon = "1.10.0"
