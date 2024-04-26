@@ -14,6 +14,8 @@ use ntru_crypt::{keygen, params::{self, NTRUParams}, poly::Polynomial, PrivateKe
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    #[arg(long, short, action=clap::ArgAction::SetTrue)]
+    debug: bool,
 }
 
 #[derive(Subcommand, Clone)]
@@ -105,9 +107,9 @@ impl Display for Format {
 fn main() {
     let cmd = Cli::parse();
     match match cmd.command {
-        Command::Keygen { security, filename } => keygen_cmd(security.parse().unwrap_or(0), filename),
-        Command::Encrypt { infile, keyfile, out_format } => encrypt_cmd(infile, keyfile, out_format),
-        Command::Decrypt { infile, in_format, keyfile, out_format } => decrypt_cmd(infile, in_format, keyfile, out_format),
+        Command::Keygen { security, filename } => keygen_cmd(security.parse().unwrap_or(0), filename, cmd.debug),
+        Command::Encrypt { infile, keyfile, out_format } => encrypt_cmd(infile, keyfile, out_format, cmd.debug),
+        Command::Decrypt { infile, in_format, keyfile, out_format } => decrypt_cmd(infile, in_format, keyfile, out_format, cmd.debug),
     } {
         Ok(_) => exit(0),
         Err(e) => {
@@ -117,23 +119,41 @@ fn main() {
     }
 }
 
-fn keygen_cmd(security: u8, filename: String) -> Result<()> {
+fn keygen_cmd(security: u8, filename: String, debug: bool) -> Result<()> {
 
-    fn keygen_inner<const N: usize, const P: i16, const Q: i16>(params: &NTRUParams<N, P, Q>) -> (Vec<u8>, Vec<u8>) 
+    fn keygen_inner<const N: usize, const P: i16, const Q: i16>(params: &NTRUParams<N, P, Q>, debug: bool) -> (Vec<u8>, Vec<u8>) 
     where
         [(); N + 1]:,
         [(); N - 1]:,
     {
         let kp = keygen(params);
 
+        if debug {
+            eprintln!("h  : {:?}", kp.pubkey.key);
+            eprintln!("f  : {:?}", kp.privkey.key_f);
+            eprintln!("f_p: {:?}", kp.privkey.key_fp);
+
+            eprint!("pubkey (bytes):  ");
+            for b in kp.pubkey.as_bytes() {
+                eprint!("{:02x}", b);
+            }
+            eprintln!("");
+
+            eprint!("privkey (bytes): ");
+            for b in kp.pubkey.as_bytes() {
+                eprint!("{:02x}", b);
+            }
+            eprintln!("");
+        }
+
         kp.as_bytes()
     }
 
     let mut keypair = match security {
-        0 => keygen_inner(&params::NTRU_EXAMPLE),
-        1 => keygen_inner(&params::NTRU_PAPER_MODERATE),
-        2 => keygen_inner(&params::NTRU_PAPER_HIGH),
-        3 => keygen_inner(&params::NTRU_PAPER_HIGHEST),
+        0 => keygen_inner(&params::NTRU_EXAMPLE, debug),
+        1 => keygen_inner(&params::NTRU_PAPER_MODERATE, debug),
+        2 => keygen_inner(&params::NTRU_PAPER_HIGH, debug),
+        3 => keygen_inner(&params::NTRU_PAPER_HIGHEST, debug),
         _ => unreachable!()
     };
     /*
@@ -168,7 +188,7 @@ fn keygen_cmd(security: u8, filename: String) -> Result<()> {
     Ok(())
 }
 
-fn encrypt_cmd(in_file: Option<String>, key_file: String, out_format: Format) -> Result<()> {
+fn encrypt_cmd(in_file: Option<String>, key_file: String, out_format: Format, debug: bool) -> Result<()> {
     let data = if let Some(path) = in_file {
         fs::read(path)?
     } else {
@@ -177,7 +197,7 @@ fn encrypt_cmd(in_file: Option<String>, key_file: String, out_format: Format) ->
         v
     };
 
-    fn encrypt_inner<const N: usize, const P: i16, const Q: i16>(data: &[u8], key_bytes: &[u8], params: &NTRUParams<N, P, Q>) -> Vec<u8> 
+    fn encrypt_inner<const N: usize, const P: i16, const Q: i16>(data: &[u8], key_bytes: &[u8], params: &NTRUParams<N, P, Q>, debug: bool) -> Vec<u8> 
     where
         [();  N + 1 ]:,
     {
@@ -185,17 +205,29 @@ fn encrypt_cmd(in_file: Option<String>, key_file: String, out_format: Format) ->
             key: Polynomial::encode::<Q>(key_bytes)[0]
         };
 
-        /*
+        if debug {
+            eprint!("raw key   : ");
+            for b in key_bytes {
+                eprint!("{:02x}", b)
+            }
+            eprintln!("");
 
-        eprint!("public key: ");
-        for b in pubkey.as_bytes() {
-            eprint!("{:02x}", b)
+            eprint!("public key: ");
+            for b in pubkey.as_bytes() {
+                eprint!("{:02x}", b)
+            }
+            eprintln!("");
+
+            eprintln!("Read {} bytes", data.len());
         }
-        eprintln!("");
 
-        */
+        let encrypt = pubkey.encrypt(data, params);
 
-        pubkey.encrypt(data, params)
+        if debug {
+            eprintln!("Encrypted to {} bytes", encrypt.len());
+        }
+         
+        encrypt
     }
 
     let key_data = base64::engine::general_purpose::STANDARD.decode(fs::read(key_file)?)?;
@@ -211,17 +243,21 @@ fn encrypt_cmd(in_file: Option<String>, key_file: String, out_format: Format) ->
 
     
     let enc_bytes = match sec {
-        0 => encrypt_inner(data.as_slice(), key_bytes, &params::NTRU_EXAMPLE),
-        1 => encrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_MODERATE),
-        2 => encrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_HIGH),
-        3 => encrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_HIGHEST),
+        0 => encrypt_inner(data.as_slice(), key_bytes, &params::NTRU_EXAMPLE, debug),
+        1 => encrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_MODERATE, debug),
+        2 => encrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_HIGH, debug),
+        3 => encrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_HIGHEST, debug),
         _ => return Err(anyhow!("Given key_file did not contain a valid key")),
     };
 
+    let mut out_bytes = (data.len() as u64).to_le_bytes().to_vec();
+
+    out_bytes.extend(enc_bytes);
+
     let s;
-    io::stdout().write(match out_format {
+    io::stdout().write_all(match out_format {
         Format::Text | Format::Binary => {
-            enc_bytes.as_slice()
+            out_bytes.as_slice()
         }
         Format::Base64 | Format::Base64Web => {
             let e = match out_format {
@@ -229,7 +265,7 @@ fn encrypt_cmd(in_file: Option<String>, key_file: String, out_format: Format) ->
                 Format::Base64Web => base64::engine::general_purpose::URL_SAFE,
                 _ => unreachable!()
             };
-            s = e.encode(enc_bytes);
+            s = e.encode(out_bytes);
             s.as_bytes()
         }
     })?;
@@ -237,7 +273,7 @@ fn encrypt_cmd(in_file: Option<String>, key_file: String, out_format: Format) ->
     Ok(())
 }
 
-fn decrypt_cmd(in_file: Option<String>, in_format: Format, keyfile: String, out_format: Format) -> Result<()> {
+fn decrypt_cmd(in_file: Option<String>, in_format: Format, keyfile: String, out_format: Format, debug: bool) -> Result<()> {
     let data = if let Some(path) = in_file {
         fs::read(path)?
     } else {
@@ -259,7 +295,7 @@ fn decrypt_cmd(in_file: Option<String>, in_format: Format, keyfile: String, out_
         }
     };
 
-    fn decrypt_inner<const N: usize, const P: i16, const Q: i16>(data: &[u8], key_bytes: &[u8], _params: &NTRUParams<N, P, Q>) -> Result<Vec<u8>> 
+    fn decrypt_inner<const N: usize, const P: i16, const Q: i16>(data: &[u8], key_bytes: &[u8], _params: &NTRUParams<N, P, Q>, debug: bool) -> Result<Vec<u8>> 
     where
         [(); N + 1]:, 
     {
@@ -269,25 +305,42 @@ fn decrypt_cmd(in_file: Option<String>, in_format: Format, keyfile: String, out_
             key_fp: parts[1].denormalize(P as u32),
         };
 
-        // eprintln!("{:?}", privkey.key_f);
-        // eprintln!("{:?}", privkey.key_fp);
+        if debug {
+            eprint!("raw key: ");
+            for b in key_bytes {
+                eprint!("{:02x}", b);
+            }
+            eprint!("key_f  :");
+            for b in Polynomial::decode::<Q>(vec![privkey.key_f].as_slice()) {
+                eprint!("{:02x}", b);
+            }
+            eprintln!("");
+            eprint!("key_fp :");
+            for b in Polynomial::decode::<Q>(vec![privkey.key_fp].as_slice()) {
+                eprint!("{:02x}", b);
+            }
+            eprintln!("");
+
+            eprintln!("key_f : {:?}", privkey.key_f);
+            eprintln!("key_fp: {:?}", privkey.key_fp);
+            eprintln!("prod  : {:?}", privkey.key_f.mul(privkey.key_fp, P as u32));
+
+        }
 
         let one = Polynomial::new_one();
 
         if privkey.key_f.mul(privkey.key_fp, P as u32) != one {
-            // eprintln!("{:?}", privkey.key_f.mul(privkey.key_fp, P as u32));
             return Err(anyhow!("Failed to reconstruct private key"))
         }
 
-        /*
-        eprint!("private key: ");
-        for b in privkey.as_bytes() {
-            eprint!("{:02x}", b);
-        }
-        eprintln!("");
-        */
+        let decrypt = privkey.decrypt(data);
 
-        Ok(privkey.decrypt(data))
+        if debug {
+            eprintln!("Read {} bytes", data.len());
+            eprintln!("Decrypted to {} bytes", decrypt.len());
+        }
+
+        Ok(decrypt)
     }
     
     let key_data = base64::engine::general_purpose::STANDARD.decode(fs::read(keyfile)?)?;
@@ -301,16 +354,27 @@ fn decrypt_cmd(in_file: Option<String>, in_format: Format, keyfile: String, out_
         _ => return Err(anyhow!("Given key_file did not contain a valid key")),
     }
 
-    let dec_bytes = match sec {
-        0 => decrypt_inner(data.as_slice(), key_bytes, &params::NTRU_EXAMPLE),
-        1 => decrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_MODERATE),
-        2 => decrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_HIGH),
-        3 => decrypt_inner(data.as_slice(), key_bytes, &params::NTRU_PAPER_HIGHEST),
+    let data_len = u64::from_le_bytes(data[0..8].try_into()?);
+
+    let data = &data.as_slice()[8..];
+
+    let mut dec_bytes = match sec {
+        0 => decrypt_inner(data, key_bytes, &params::NTRU_EXAMPLE, debug),
+        1 => decrypt_inner(data, key_bytes, &params::NTRU_PAPER_MODERATE, debug),
+        2 => decrypt_inner(data, key_bytes, &params::NTRU_PAPER_HIGH, debug),
+        3 => decrypt_inner(data, key_bytes, &params::NTRU_PAPER_HIGHEST, debug),
         _ => return Err(anyhow!("Given key_file did not contain a valid key")),
     }?;
 
+    if debug {
+        eprintln!("Expected {} bytes", data_len);
+    }
+
+    // truncate or extend the data with zeros. to its given length
+    dec_bytes.resize(data_len as usize, 0);
+
     let s;
-    io::stdout().write(match out_format {
+    io::stdout().write_all(match out_format {
         Format::Text => {
             s = String::from_utf8(dec_bytes)?.into_bytes();
             s.as_slice()
