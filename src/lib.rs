@@ -8,6 +8,7 @@ pub mod poly;
 use params::NTRUParams;
 use poly::{int_log2, Polynomial};
 
+#[derive(Debug)]
 pub struct KeyPair<const N: usize, const P: i16, const Q: i16> {
     pub pubkey: PublicKey<N, P, Q>,
     pub privkey: PrivateKey<N, P, Q>,
@@ -28,10 +29,15 @@ impl<const N: usize, const P: i16, const Q: i16> KeyPair<N, P, Q> {
     pub fn split(self) -> (PublicKey<N, P, Q>, PrivateKey<N, P, Q>) {
         (self.pubkey, self.privkey)
     }
+
+    pub fn as_bytes(&self) -> (Vec<u8>, Vec<u8>) {
+        (self.pubkey.as_bytes(), self.privkey.as_bytes())
+    }
 }
 
 /// Public key used to encrypt data so that it can only be decrypted by the
 /// matching private key.
+#[derive(Debug)]
 pub struct PublicKey<const N: usize, const P: i16, const Q: i16> {
     pub key: Polynomial<N>,
 }
@@ -42,25 +48,25 @@ impl<const N: usize, const P: i16, const Q: i16> PublicKey<N, P, Q> {
         [(); { N + 1 }]:,
     {
         let polys = Polynomial::<N>::encode::<P>(data);
-        // let r = Polynomial::<N>::rand_ternary_t(1, 1).denormalize(P as u32);
-        let r = Polynomial::<N>::rand_ternary_t(params.d_phi, params.d_phi).denormalize(P as u32);
-        // let r = Polynomial::<N>::rand_ternary();
-        // let r = Polynomial::new_zero();
-        // let r = Polynomial::new_one();
         let encrypted = polys
             .into_iter()
-            .map(|m| self.key.mul(r, Q as u32).add(m, Q as u32))
+            .map(|m| {
+                let r = Polynomial::<N>::rand_ternary_t(params.d_phi, params.d_phi)
+                    .denormalize(P as u32);
+                self.key.mul(r, Q as u32).add(m, Q as u32)
+            })
             .collect::<Vec<_>>();
 
         Polynomial::<N>::decode::<Q>(encrypted.as_slice())
     }
 
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn as_bytes(&self) -> Vec<u8> {
         Polynomial::decode::<Q>(vec![self.key].as_slice())
     }
 }
 
 /// Private key used to decrypt data encrypted by the matching Public key.
+#[derive(Debug)]
 pub struct PrivateKey<const N: usize, const P: i16, const Q: i16> {
     pub key_f: Polynomial<N>,
     pub key_fp: Polynomial<N>,
@@ -83,9 +89,8 @@ impl<const N: usize, const P: i16, const Q: i16> PrivateKey<N, P, Q> {
         Polynomial::<N>::decode::<P>(decrypted.as_slice())
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        // key_fp is not necessary to store, and can be reconstructed later.
-        Polynomial::decode::<Q>(vec![self.key_f].as_slice())
+    pub fn as_bytes(&self) -> Vec<u8> {
+        Polynomial::decode::<Q>(vec![self.key_f, self.key_fp].as_slice())
     }
 }
 
@@ -118,8 +123,6 @@ where
                 if f.normalize(P as u32).mul(f_p, P as u32) != one {
                     continue;
                 }
-                // println!("{}", f.normalize(P as u32).mul(f_p, P as u32));
-                // println!("{}", f.mul(f_q, Q as u32));
                 break;
             }
         }

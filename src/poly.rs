@@ -302,18 +302,13 @@ impl<const N: usize> Polynomial<N> {
         g.set(N, 1);
 
         loop {
-            println!("f top : {:?}", f);
-            println!("g top : {:?}", g);
             while f.0[0] == 0 {
                 f.shift_div_x();
-                println!("f/x   : {:?}", f);
                 c.shift_mul_x();
 
                 k += 1;
 
-                // println!("checking zero");
                 if f.zero() {
-                    println!("Was zero, not invertible");
                     return None;
                 }
             }
@@ -321,16 +316,11 @@ impl<const N: usize> Polynomial<N> {
             if f.degree() == 0 {
                 let f0_inv = int_inverse(f.0[0], modulus);
                 b = b.mul_scalar(f0_inv, modulus);
-                println!("b     : {b:?}");
                 let mut inv = b.reduce(modulus);
-                println!("b red : {inv}");
 
                 for _ in 0..k {
                     inv.div_x(modulus);
-                    println!("inv/x : {inv}");
                 }
-
-                println!("\x1b[32mInv   : {:?}\x1b[0m", inv);
 
                 return Some(inv);
             }
@@ -343,10 +333,7 @@ impl<const N: usize> Polynomial<N> {
             // u = f[0] * g[0]^-1
             let g0_inv = int_inverse(g.0[0], modulus);
             let u = (f.0[0] * g0_inv) % modulus as i16;
-            println!("f bot : {f:?}");
-            println!("g bot : {g:?}");
             f.sub_multiple(g, u, modulus);
-            println!("f - ug: {f:?}");
             b.sub_multiple(c, u, modulus);
         }
     }
@@ -362,22 +349,10 @@ impl<const N: usize> Polynomial<N> {
         let mut two = Polynomial::<N>::new_zero();
         two.set(0, 2);
 
-        // println!("self : {}", self.normalize(p as u32));
-        // println!("inv_p: {}", inv_p);
-        // println!("a*p_i: {}", self.normalize(p as u32).mul(inv_p, p as u32));
         let mut q: u32 = p as u32;
         while q < (p as u32).pow(r as u32) as u32 {
             q = q * q;
             inv_p = inv_p.mul(two.sub(self.mul(inv_p, q), q), q);
-            /*
-            println!("inv_p: {inv_p}");
-            println!(
-                "a*p_i: {}",
-                self.denormalize(p as u32)
-                    .normalize(q as u32)
-                    .mul(inv_p, q as u32)
-            );
-            */
         }
 
         Some(inv_p)
@@ -400,12 +375,10 @@ impl<const N: usize> Polynomial<N> {
             while coeff_idx < N {
                 while (coeff_bits < bits_per_coeff) {
                     if byte_idx == data.len() {
-                        // println!("Finished data");
                         poly_data[coeff_idx] = coeff_buf as i16;
                         out_polys.push(Polynomial(poly_data));
                         break 'outer;
                     }
-                    // println!("Read byte");
                     coeff_buf += ((data[byte_idx]) as u32) << coeff_bits;
                     coeff_bits += 8 - bit_idx;
                     byte_idx += 1;
@@ -416,9 +389,7 @@ impl<const N: usize> Polynomial<N> {
                 coeff_idx += 1;
                 coeff_buf >>= bits_per_coeff;
                 coeff_bits -= bits_per_coeff;
-                // println!("Push coefficient ({} Bits remaining)", coeff_bits);
             }
-            // println!("Finished Poly");
             out_polys.push(Polynomial(poly_data));
             coeff_idx = 0;
         }
@@ -454,6 +425,9 @@ impl<const N: usize> Polynomial<N> {
                 }
             }
             coeff_idx = 0;
+        }
+        if coeff_bits > 0 {
+            out_bytes.push((coeff_buf & 0xFF) as u8); // should be at most 1 byte left
         }
 
         out_bytes
