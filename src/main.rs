@@ -140,7 +140,7 @@ fn keygen_cmd(security: u8, filename: String, debug: bool) -> Result<()> {
             eprintln!("");
 
             eprint!("privkey (bytes): ");
-            for b in kp.pubkey.as_bytes() {
+            for b in kp.privkey.as_bytes() {
                 eprint!("{:02x}", b);
             }
             eprintln!("");

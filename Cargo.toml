@@ -8,4 +8,3 @@ anyhow = "1.0.82"
 base64 = "0.22.0"
 clap = { version = "4.5.4", features = ["derive"] }
 rand = "0.8.5"
-rayon = "1.10.0"

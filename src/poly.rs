@@ -121,14 +121,13 @@ impl<const N: usize> Polynomial<N> {
         self.0[N - 1] = 0;
     }
 
-    pub fn div_x(&mut self, modulus: u32) {
-        // println!("({self})/x");
-        let a0 = self.0[0] as i64;
+    /// Moves the contents of the vector down 1, filling in with the constant coeff.
+    pub fn rotate_div_x(&mut self, modulus: u32) {
+        let a0 = self.0[0];
         for i in 1..N {
             self.0[i - 1] = self.0[i];
         }
-        self.0[N - 1] = a0 as i16;
-        self.0[0] = ((self.0[0] as i64 - a0 + modulus as i64) % modulus as i64) as i16;
+        self.0[N - 1] = a0;
     }
 
     /// Moves the contents of the vector up 1, filling in with constant 0
@@ -137,6 +136,15 @@ impl<const N: usize> Polynomial<N> {
             self.0[i] = self.0[i - 1];
         }
         self.0[0] = 0;
+    }
+
+    /// Moves the contents of the vector up 1, filling in with the leading coeff.
+    pub fn rotate_mul_x(&mut self) {
+        let an = self.0[N - 1];
+        for i in (1..N).rev() {
+            self.0[i] = self.0[i - 1];
+        }
+        self.0[0] = an;
     }
 
     /// Gets the maximum degree of the vector
@@ -291,48 +299,36 @@ impl<const N: usize> Polynomial<N> {
         [(); { N + 1 }]:,
     {
         let mut k = 0;
-        let mut b = Polynomial::<{ N + 1 }>::new_zero();
-        b.set(0, 1);
+        let mut b = Polynomial::<{ N + 1 }>::new_one();
         let mut c = Polynomial::<{ N + 1 }>::new_zero();
-
-        let mut f = self.normalize(modulus).extend::<{ N + 1 }>();
+        let mut f = self.extend::<{ N + 1 }>();
         let mut g = Polynomial::<{ N + 1 }>::new_zero();
         g.set(0, (modulus - 1) as i16);
-        g.set(1, (modulus - 1) as i16);
         g.set(N, 1);
 
         loop {
             while f.0[0] == 0 {
                 f.shift_div_x();
                 c.shift_mul_x();
-
                 k += 1;
-
                 if f.zero() {
                     return None;
                 }
             }
-
             if f.degree() == 0 {
-                let f0_inv = int_inverse(f.0[0], modulus);
-                b = b.mul_scalar(f0_inv, modulus);
-                let mut inv = b.reduce(modulus);
-
+                let mut inv = b.mul_scalar(int_inverse(f.0[0], modulus), modulus);
+                inv.0[0] = (inv.0[0] + inv.0[N]) % modulus as i16;
+                let mut inv = inv.extend::<N>();
                 for _ in 0..k {
-                    inv.div_x(modulus);
+                    inv.rotate_div_x(modulus);
                 }
-
                 return Some(inv);
             }
-
             if f.degree() < g.degree() {
                 (f, g) = (g, f);
                 (b, c) = (c, b);
             }
-
-            // u = f[0] * g[0]^-1
-            let g0_inv = int_inverse(g.0[0], modulus);
-            let u = (f.0[0] * g0_inv) % modulus as i16;
+            let u = f.0[0] * int_inverse(g.0[0], modulus);
             f.sub_multiple(g, u, modulus);
             b.sub_multiple(c, u, modulus);
         }
@@ -342,7 +338,7 @@ impl<const N: usize> Polynomial<N> {
     where
         [(); { N + 1 }]:,
     {
-        let mut inv_p = self.normalize(p as u32).inverse_gcd(p as u32)?;
+        let mut inv_p = self.normalize(p as u32).inverse_prime(p as u32)?;
 
         let count = int_log2(r as i16 + 1);
 
@@ -444,6 +440,7 @@ pub fn int_log2(mut a: i16) -> i16 {
 }
 
 pub fn int_inverse(mut n: i16, modulus: u32) -> i16 {
+    n = (((n % modulus as i16) + modulus as i16) % modulus as i16);
     let mut x = 0;
     let mut x_prev = 1;
     let mut y = 1;
@@ -482,7 +479,7 @@ impl<const N: usize> Display for Polynomial<N> {
             if self.0[i] == 0 {
                 continue;
             }
-            let pl = match (fst, self.0[i] != -1) {
+            let pl = match (fst, self.0[i] >= 0) {
                 (true, true) => "",
                 (true, false) => "-",
                 (false, true) => " + ",
